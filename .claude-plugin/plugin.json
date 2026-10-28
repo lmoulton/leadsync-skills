@@ -14,5 +14,12 @@
   "privacyPolicyUrl": "https://leadsync.me/privacy",
   "termsOfServiceUrl": "https://leadsync.me/terms",
   "license": "MIT",
-  "keywords": ["leadsync", "lead-delivery", "facebook-lead-ads", "meta-lead-ads", "mcp"]
+  "icon": "./assets/logo.png",
+  "keywords": [
+    "leadsync",
+    "lead-delivery",
+    "facebook-lead-ads",
+    "meta-lead-ads",
+    "mcp"
+  ]
 }
