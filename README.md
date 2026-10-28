@@ -15,7 +15,11 @@ npx @leadsync/skills login
 
 **Cursor:** `npx @leadsync/skills --cursor`, then `npx @leadsync/skills login`.
 
-**Codex:** `npx @leadsync/skills --codex`, then `npx @leadsync/skills login`.
+**Codex** (OpenAI's coding agent, included with ChatGPT plans): `npx @leadsync/skills --codex`, then `npx @leadsync/skills login`.
+
+**Gemini CLI:** `gemini mcp add -s user leadsync npx -y @leadsync/mcp`, then `npx @leadsync/skills login`. Type `/mcp` in Gemini CLI to check it shows as connected.
+
+The ChatGPT, Gemini and Claude web apps only connect to hosted MCP servers with a sign-in, so they can't use this server yet.
 
 `--all` installs into every one of these that is set up on your computer. `--project-dir <dir>` puts Cursor's `mcp.json` and the skills in a project folder instead of your home folder (Claude Code and Codex still register the server for your user). `--uninstall` removes the server and the skills again.
 
