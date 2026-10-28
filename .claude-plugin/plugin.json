@@ -1,0 +1,18 @@
+{
+  "name": "leadsync",
+  "displayName": "LeadSync",
+  "version": "0.1.0",
+  "description": "Set up and troubleshoot LeadSync lead delivery from Claude: an MCP server for the LeadSync API plus skills for setup, connecting lead forms and diagnosing missing leads.",
+  "author": {
+    "name": "LeadSync",
+    "url": "https://leadsync.me"
+  },
+  "homepage": "https://leadsync.me/mcp",
+  "repository": "https://github.com/lmoulton/leadsync-skills",
+  "documentationUrl": "https://github.com/lmoulton/leadsync-skills#readme",
+  "supportUrl": "https://leadsync.me/account/support",
+  "privacyPolicyUrl": "https://leadsync.me/privacy",
+  "termsOfServiceUrl": "https://leadsync.me/terms",
+  "license": "MIT",
+  "keywords": ["leadsync", "lead-delivery", "facebook-lead-ads", "meta-lead-ads", "mcp"]
+}

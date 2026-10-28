@@ -1,0 +1,1103 @@
+openapi: 3.0.3
+info:
+  title: LeadSync API v1
+  version: 1.0.0
+  license:
+    name: Proprietary
+    url: https://leadsync.me/terms
+  description: |
+    Everything the LeadSync dashboard does for Meta (Facebook and Instagram) lead forms, as JSON: connections,
+    lead forms, field mapping, autoresponders, leads and delivery logs.
+
+    **Getting a key.** Create one in LeadSync under Account, Settings, API keys (`/account/settings#api-keys`),
+    or run `npx @leadsync/skills login` and approve the request in your browser. Use one key per assistant or
+    integration so you can revoke each on its own. Send it as `Authorization: Bearer ls_live_...`. The key is
+    shown once, when it is created.
+
+    **Scope.** Reads cover every source LeadSync holds. Writes are for Meta lead forms only: pages whose
+    `page_fb_id` is `google`, `linkedin` or `tiktok` are read-only here and writes return 400 `not_meta_source`.
+
+    **Rate limit.** 120 requests per minute per key. Over the limit returns 429 with `Retry-After`.
+
+    **Errors** are RFC 7807 (`application/problem+json`) with a stable `code`. Every operation lists the codes it
+    can produce in `x-problem-codes`. Codes common to all operations (401 `unauthorized`, 401 `key_revoked`,
+    429 `rate_limited`, 500 `internal`) are listed once in the `Problem` schema and not repeated per operation.
+
+    Timestamps are ISO 8601 UTC except `lead_date_local` (the advertiser's local time) and `created` on
+    autoresponders (a calendar date). There are no DELETE verbs.
+servers:
+  - url: https://leadsync.me
+    description: Production
+security:
+  - bearerAuth: []
+tags:
+  - name: Login
+    description: Get a key without copying it by hand. No key is needed for these two calls.
+  - name: Account
+    description: Who the key is.
+  - name: Sources
+    description: Pages, forms, connections and destination fields.
+  - name: Lists
+    description: Attaching forms to destinations, mapping, activation and test leads.
+  - name: Autoresponders
+    description: Email autoresponders on connections.
+  - name: Leads
+    description: Delivery status, resend and the email log.
+paths:
+  /api/v1/device/code:
+    post:
+      tags: [Login]
+      operationId: startDeviceLogin
+      summary: Start a device login
+      description: |
+        Step 1 of the device flow (RFC 8628). Show `user_code` and `verification_uri` to the person, or open
+        `verification_uri_complete` for them. They sign in to LeadSync and approve the request. Meanwhile poll
+        `POST /api/v1/device/token` every `interval` seconds until `expires_in` runs out.
+        Limited to 20 starts per IP address per 10 minutes.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                  default: LeadSync CLI
+                  description: Shown to the person when they approve, and used as the key name.
+      responses:
+        '200':
+          description: The codes for this login.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval]
+                properties:
+                  device_code:
+                    type: string
+                    description: Secret polling code. Keep it in the client; never show it.
+                  user_code:
+                    type: string
+                    example: BCDF-GH23
+                    description: Short code the person checks against the approval page.
+                  verification_uri: {type: string, format: uri, example: 'https://leadsync.me/account/device'}
+                  verification_uri_complete:
+                    type: string
+                    format: uri
+                    example: 'https://leadsync.me/account/device?code=BCDF-GH23'
+                  expires_in: {type: integer, example: 900, description: Seconds until the codes expire.}
+                  interval: {type: integer, example: 5, description: Minimum seconds between token polls.}
+        '400': {$ref: '#/components/responses/Problem'}
+        '429': {$ref: '#/components/responses/Problem'}
+        '500': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, rate_limited]
+  /api/v1/device/token:
+    post:
+      tags: [Login]
+      operationId: pollDeviceLogin
+      summary: Collect the key once the person approves
+      description: |
+        Step 2 of the device flow. Poll no faster than `interval` seconds; a faster poll returns 400 `slow_down`.
+        While the person has not decided yet the answer is 400 `authorization_pending`. On approval the response
+        carries the new key, once. A second poll with the same `device_code` returns 400 `invalid_grant`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_code]
+              properties:
+                device_code: {type: string, description: The `device_code` from `POST /api/v1/device/code`.}
+      responses:
+        '200':
+          description: Approved. The key is shown here once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_key, key_name, account]
+                properties:
+                  api_key: {type: string, example: ls_live_xxxxxxxxxxxxxxxx}
+                  key_name: {type: string}
+                  account:
+                    type: object
+                    required: [id, email]
+                    properties:
+                      id: {type: integer}
+                      email: {type: string}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '429': {$ref: '#/components/responses/Problem'}
+        '500': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [authorization_pending, slow_down, expired_token, access_denied, invalid_grant, validation]
+  /api/v1/me:
+    get:
+      tags: [Account]
+      operationId: getMe
+      summary: The account and key this request resolves to
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+      responses:
+        '200':
+          description: Account, key flags and plan limits.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [account_not_found]
+  /api/v1/accounts:
+    get:
+      tags: [Account]
+      operationId: searchAccounts
+      x-internal: true
+      summary: Search accounts by email, username or page name (admin keys only)
+      description: Up to 20 matches, ordered by id.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - name: q
+          in: query
+          required: true
+          schema: {type: string, minLength: 1}
+          description: Substring matched against email, username and page name.
+      responses:
+        '200':
+          description: Matching accounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accounts]
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccountSummary'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, act_as_forbidden]
+  /api/v1/connections:
+    get:
+      tags: [Sources]
+      operationId: getConnections
+      summary: Source to form to destination graph, plus the account's connections
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+      responses:
+        '200':
+          description: Sources (pages) with their lists and destinations, and connections with their autoresponders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionsGraph'
+        '401': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: []
+  /api/v1/destinations/{dua}/fields:
+    get:
+      tags: [Sources]
+      operationId: getDestinationFields
+      summary: A connection's destination fields, as the mapping table loads them
+      description: Read-only. `dua` is a connection id (destination_user_access id).
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - name: dua
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: sheet_id
+          in: query
+          required: false
+          schema: {type: string}
+          description: Required for Google Sheets connections.
+      responses:
+        '200':
+          description: Destination fields (shape varies by destination) and optional tags.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connection, fields]
+                properties:
+                  connection:
+                    $ref: '#/components/schemas/ConnectionRef'
+                  fields:
+                    description: The destination helper's custom_fields, passed through as returned.
+                  tags:
+                    description: Destination tags when the destination supports them.
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, not_found, destination_error]
+  /api/v1/pages/{id}/forms/refresh:
+    post:
+      tags: [Sources]
+      operationId: refreshForms
+      summary: Re-read a Facebook page's lead forms from Meta
+      description: |
+        Calls Meta Graph for the page's lead forms and marks which are already attached to a list.
+        Needs no write permission (it changes nothing in LeadSync). Meta pages only.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+          description: LeadSync page id (not the Facebook page id).
+      responses:
+        '200':
+          description: The page's lead forms.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page, forms]
+                properties:
+                  page:
+                    type: object
+                    required: [id, page_fb_id, page_name]
+                    properties:
+                      id: {type: integer}
+                      page_fb_id: {type: string}
+                      page_name: {type: string}
+                  forms:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MetaForm'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [not_found, not_meta_source, conflict, reconnect_required, meta_error]
+  /api/v1/lists:
+    post:
+      tags: [Lists]
+      operationId: attachList
+      summary: Attach a Meta lead form (or the page catch-all) to a connection
+      description: |
+        Mirrors the UI save: creates a list and its single destination row. Idempotent on (page, form, connection):
+        an existing list is returned with `created: false` (200) and its mapping is never rewritten; if `mapping` or
+        `settings` were sent, the response carries `mapping_applied: false` and a `hint` pointing at
+        `PUT /api/v1/lists/{id}/mapping`. The existing list may be inactive (paused): then `list.active` is false and
+        the `hint` says to `PATCH /api/v1/lists/{id}` with `{"active": true}` to resume delivery (one combined hint
+        when both apply).
+
+        A new list runs the same form-variation backfill the UI runs: up to 7 days of the form's leads are re-sent to the
+        new destination. `backfill` reports the counts, or is null for the catch-all, for an existing list, or when the
+        backfill failed. Callers must expect replayed leads.
+
+        Limits checked in order: account_inactive, source_limit, forms_limit. `override_limits: true` needs an admin key
+        with write access and skips them (the audit row records which were bypassed).
+        Needs a write-capable key.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachListRequest'
+      responses:
+        '201':
+          description: List created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachListResponse'
+        '200':
+          description: A list for this page, form and connection already existed; nothing was changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachListResponse'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [read_only_key, validation, not_found, not_meta_source, conflict, busy, account_inactive, source_limit, forms_limit]
+  /api/v1/lists/{id}:
+    patch:
+      tags: [Lists]
+      operationId: setListActive
+      summary: Activate or deactivate a list
+      description: |
+        Activating can use a source slot, so it is gated by account_inactive and source_limit (skippable with
+        `override_limits` on an admin write key) and refuses when another active list already covers the same form and
+        connection (`conflict`). Setting the state a list already has returns 200 with `changed: false`.
+        Needs a write-capable key.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - $ref: '#/components/parameters/ListId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              additionalProperties: false
+              properties:
+                active: {type: boolean}
+                override_limits: {type: boolean, default: false}
+      responses:
+        '200':
+          description: The list and whether anything changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [list]
+                properties:
+                  list:
+                    allOf:
+                      - $ref: '#/components/schemas/List'
+                      - type: object
+                        required: [changed]
+                        properties:
+                          changed: {type: boolean}
+                  overridden_limits:
+                    $ref: '#/components/schemas/OverriddenLimits'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [read_only_key, validation, not_found, not_meta_source, conflict, account_inactive, source_limit]
+  /api/v1/lists/{id}/mapping:
+    put:
+      tags: [Lists]
+      operationId: setListMapping
+      summary: Replace a list's field mapping and/or per-list destination settings
+      description: |
+        Send `mapping`, `settings`, or both. Settings are merged over the stored ones; the connection and name are never
+        changed. Refuses lists with more than one destination (`one_destination_per_list`).
+        Needs a write-capable key.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - $ref: '#/components/parameters/ListId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                mapping:
+                  $ref: '#/components/schemas/Mapping'
+                settings:
+                  $ref: '#/components/schemas/ListSettings'
+      responses:
+        '200':
+          description: The updated list and destination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [list, destination]
+                properties:
+                  list:
+                    $ref: '#/components/schemas/List'
+                  destination:
+                    $ref: '#/components/schemas/Destination'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [read_only_key, validation, not_found, not_meta_source, conflict, one_destination_per_list]
+  /api/v1/lists/{id}/test-lead:
+    post:
+      tags: [Lists]
+      operationId: sendTestLead
+      summary: Ask Meta to create a test lead for a list's form
+      description: |
+        Meta lists only. Permission is the key's `can_test_lead` flag, not the write flag. When acting on another
+        account (admin act-as) the body must carry `acknowledge_customer_impact: true`, because the lead goes to the
+        customer's real destinations and may email them. Throttled per form per minute and per account per day.
+        The body is optional.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - $ref: '#/components/parameters/ListId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                acknowledge_customer_impact: {type: boolean, default: false}
+      responses:
+        '200':
+          description: The test lead was created at Meta and queued for delivery.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, leadgen_id, list_id, note]
+                properties:
+                  status: {type: string, enum: [queued]}
+                  leadgen_id: {type: string, nullable: true}
+                  list_id: {type: integer}
+                  note: {type: string}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '429': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, not_found, not_meta_source, test_lead_forbidden, customer_impact_not_acknowledged, test_lead_throttled, meta_error]
+  /api/v1/autoresponders:
+    get:
+      tags: [Autoresponders]
+      operationId: listAutoresponders
+      summary: The account's autoresponders
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+      responses:
+        '200':
+          description: Autoresponders ordered by id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoresponders]
+                properties:
+                  autoresponders:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, subject, connection_id, connection_name, type, sent, created]
+                      properties:
+                        id: {type: integer}
+                        name: {type: string}
+                        subject: {type: string}
+                        connection_id: {type: integer}
+                        connection_name: {type: string, nullable: true}
+                        type: {type: string}
+                        sent: {type: integer}
+                        created:
+                          type: string
+                          format: date
+                          nullable: true
+                          description: Calendar date (America/Los_Angeles) the autoresponder was created. Not a timestamp.
+        '401': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: []
+    post:
+      tags: [Autoresponders]
+      operationId: createAutoresponder
+      summary: Create an email autoresponder on a connection
+      description: |
+        Mirrors the UI save for a new email autoresponder: plan gate, then the shared-connection guard, then the plan's
+        quantity limit. If the connection already has autoresponders that would stack with this one, the request is refused
+        with 409 `shared_connection_autoresponder` (body carries `existing` and `message`); repeat with
+        `acknowledge_shared_connection: true` to proceed. `override_limits` (admin write key) skips the plan and quantity
+        limits but never the shared-connection guard. Moderation is off today, so `under_moderation` is 0.
+        Needs a write-capable key.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAutoresponderRequest'
+      responses:
+        '201':
+          description: Autoresponder created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoresponder]
+                properties:
+                  autoresponder:
+                    type: object
+                    required: [id, name, subject, connection_id, under_moderation, stacked_with]
+                    properties:
+                      id: {type: integer}
+                      name: {type: string}
+                      subject: {type: string}
+                      connection_id: {type: integer}
+                      under_moderation: {type: integer, enum: [0, 1]}
+                      stacked_with:
+                        $ref: '#/components/schemas/AutoresponderRefs'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [read_only_key, validation, not_found, autoresponder_limit, shared_connection_autoresponder]
+  /api/v1/leads:
+    get:
+      tags: [Leads]
+      operationId: listLeads
+      summary: Recent leads with one leg per destination list
+      description: |
+        Newest activity first. `since` defaults to 7 days ago when omitted and the response echoes the value used as
+        `since_used`; pass an older `since` to see older leads. Filtering by `status` returns only the matching legs of
+        each lead. `since` filters on the leg's creation time, so a leg re-sent after `since` of an older lead is not
+        returned unless that lead was first queued after `since`.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - name: list_id
+          in: query
+          schema: {type: integer, minimum: 1}
+        - $ref: '#/components/parameters/Since'
+        - name: status
+          in: query
+          schema: {type: string, enum: [success, failed, pending, held]}
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Leads.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [since_used, leads]
+                properties:
+                  since_used:
+                    type: string
+                    format: date-time
+                  leads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Lead'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, not_found]
+  /api/v1/leads/{leadgen_id}/resend:
+    post:
+      tags: [Leads]
+      operationId: resendLead
+      summary: Requeue one Meta lead's failed or held deliveries
+      description: |
+        Any valid key may call this, including a read-only admin key (a resend only re-delivers to lists the lead already
+        has a delivery on). Returns 202: the workers deliver asynchronously (about a minute); poll `GET /api/v1/leads`.
+
+        The server predicts the delivery fan-out and refuses (409 `conflict`) if the resend would create a first or
+        duplicate delivery. Account keys are also refused when the re-run would retry another account's deliveries;
+        admin keys proceed and `other_account_legs` counts them. Legs that were not requeued are listed in `skipped`
+        with a reason: `success` (already delivered), `not_failed` (not in a retryable state), `not_routed` (the list no
+        longer receives this form's leads), `other_list` (outside the `list_id` filter). Body is optional.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - name: leadgen_id
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,255}$'}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                list_id:
+                  type: integer
+                  minimum: 1
+                  description: Only resend this list's delivery.
+      responses:
+        '202':
+          description: Accepted for redelivery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResendResult'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, not_found, not_meta_source, lead_in_flight, lead_not_resendable, conflict, busy]
+  /api/v1/email-log:
+    get:
+      tags: [Leads]
+      operationId: listEmailLog
+      summary: Emails LeadSync sent for the account
+      description: Newest first. Same filter semantics as the email log screen.
+      parameters:
+        - $ref: '#/components/parameters/AccountHeader'
+        - name: list_id
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: type
+          in: query
+          schema: {type: string, enum: [lead_notification, autoresponder, system, test_autoresponder]}
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Emails.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [emails]
+                properties:
+                  emails:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, email_type, recipient_email, subject, status, list_id, lead_id, created_at]
+                      properties:
+                        id: {type: integer}
+                        email_type: {type: string}
+                        recipient_email: {type: string}
+                        subject: {type: string, nullable: true}
+                        status: {type: string, nullable: true}
+                        list_id: {type: integer, nullable: true}
+                        lead_id: {type: string, nullable: true}
+                        created_at: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+      x-problem-codes: [validation, not_found]
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: An `ls_live_` API key created under Account, Settings, API keys (`/account/settings#api-keys`) or by `npx @leadsync/skills login`. Shown once at creation. Use one key per assistant or integration.
+  parameters:
+    AccountHeader:
+      name: X-LeadSync-Account
+      in: header
+      x-internal: true
+      required: false
+      schema: {type: string, pattern: '^[0-9]+$'}
+      description: Admin keys only. The account (user id) to act on. Account keys sending another id get 403 `act_as_forbidden`.
+    ListId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer, minimum: 1}
+      description: List id.
+    Since:
+      name: since
+      in: query
+      required: false
+      schema: {type: string, format: date-time}
+      description: ISO 8601 timestamp with an explicit offset or Z, for example 2026-10-27T02:20:15Z.
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+  responses:
+    Problem:
+      description: RFC 7807 problem. The `code` field is stable; see the operation's `x-problem-codes`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code, detail]
+      properties:
+        type: {type: string, example: about:blank}
+        title: {type: string}
+        status: {type: integer}
+        code:
+          type: string
+          description: |
+            Stable machine code. 401: unauthorized, key_revoked. 400: validation, not_meta_source,
+            customer_impact_not_acknowledged. 403: act_as_forbidden, read_only_key, test_lead_forbidden, account_inactive,
+            source_limit, forms_limit, autoresponder_limit. 404: account_not_found, not_found.
+            409: one_destination_per_list, shared_connection_autoresponder, lead_in_flight, lead_not_resendable,
+            reconnect_required, conflict, busy.
+            Device login: 400 authorization_pending, slow_down, expired_token, invalid_grant; 403 access_denied.
+            429: rate_limited, test_lead_throttled. 500: internal. 502: meta_error, destination_error.
+          enum:
+            - unauthorized
+            - key_revoked
+            - act_as_forbidden
+            - account_not_found
+            - read_only_key
+            - rate_limited
+            - validation
+            - source_limit
+            - forms_limit
+            - account_inactive
+            - one_destination_per_list
+            - shared_connection_autoresponder
+            - autoresponder_limit
+            - lead_in_flight
+            - lead_not_resendable
+            - test_lead_throttled
+            - customer_impact_not_acknowledged
+            - test_lead_forbidden
+            - not_meta_source
+            - not_found
+            - internal
+            - reconnect_required
+            - meta_error
+            - authorization_pending
+            - slow_down
+            - expired_token
+            - access_denied
+            - invalid_grant
+            - destination_error
+            - conflict
+            - busy
+        detail: {type: string}
+        retry_after:
+          type: integer
+          description: Present on 429 `rate_limited`; seconds to wait (also sent as the Retry-After header).
+        existing:
+          $ref: '#/components/schemas/AutoresponderRefs'
+        message:
+          type: string
+          description: Present on 409 `shared_connection_autoresponder`; the same text as `detail`.
+    Me:
+      type: object
+      required: [account, key, acting_on_other_account, limits]
+      properties:
+        account:
+          type: object
+          required: [id, email, username, level, is_subscribed, join_date]
+          properties:
+            id: {type: integer}
+            email: {type: string}
+            username: {type: string, nullable: true}
+            level: {type: string}
+            is_subscribed: {type: boolean}
+            join_date: {type: string, nullable: true}
+        key:
+          type: object
+          required: [name, scope, can_write_accounts, can_test_lead]
+          properties:
+            name: {type: string}
+            scope: {type: string, enum: [admin, account]}
+            can_write_accounts: {type: boolean}
+            can_test_lead: {type: boolean}
+        acting_on_other_account: {type: boolean}
+        limits:
+          type: object
+          required: [forms, sources]
+          properties:
+            forms: {type: integer, nullable: true, description: 'Null means unlimited. The plan cap raised by the account''s list_limit_override, the same cap POST /api/v1/lists enforces.'}
+            sources: {type: integer, nullable: true, description: Null means unlimited.}
+    AccountSummary:
+      type: object
+      required: [id, email, username, level, is_subscribed, pages]
+      properties:
+        id: {type: integer}
+        email: {type: string}
+        username: {type: string, nullable: true}
+        level: {type: string}
+        is_subscribed: {type: boolean}
+        pages:
+          type: array
+          items:
+            type: object
+            required: [id, page_name]
+            properties:
+              id: {type: integer}
+              page_name: {type: string}
+    ConnectionRef:
+      type: object
+      required: [id, destination_id, destination_title, name]
+      properties:
+        id: {type: integer}
+        destination_id: {type: integer}
+        destination_title: {type: string}
+        name: {type: string}
+    ConnectionsGraph:
+      type: object
+      required: [sources, connections]
+      properties:
+        sources:
+          type: array
+          items:
+            type: object
+            required: [type, page, lists]
+            properties:
+              type: {type: string, enum: [facebook, google, linkedin, tiktok]}
+              page:
+                type: object
+                required: [id, page_fb_id, page_name]
+                properties:
+                  id: {type: integer}
+                  page_fb_id: {type: string}
+                  page_name: {type: string}
+              lists:
+                type: array
+                items:
+                  type: object
+                  required: [id, form_id, form_name, active, destinations]
+                  properties:
+                    id: {type: integer}
+                    form_id: {type: string, description: "A Meta form id, or '*' for the page catch-all."}
+                    form_name: {type: string}
+                    active: {type: boolean}
+                    destinations:
+                      type: array
+                      items:
+                        type: object
+                        required: [dls_id, connection_id, destination_id, destination_title, mapping_set]
+                        properties:
+                          dls_id: {type: integer}
+                          connection_id: {type: integer}
+                          destination_id: {type: integer}
+                          destination_title: {type: string}
+                          mapping_set: {type: boolean}
+        connections:
+          type: array
+          items:
+            type: object
+            required: [id, destination_id, destination_title, name, created_at, autoresponders]
+            properties:
+              id: {type: integer}
+              destination_id: {type: integer}
+              destination_title: {type: string}
+              name: {type: string}
+              created_at: {type: string, format: date-time, nullable: true}
+              autoresponders:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, subject, sent]
+                  properties:
+                    id: {type: integer}
+                    name: {type: string}
+                    subject: {type: string}
+                    sent: {type: integer}
+    MetaForm:
+      type: object
+      required: [form_id, name, status, created_time, leads_count, attached_list_ids, questions]
+      properties:
+        form_id: {type: string}
+        name: {type: string}
+        status: {type: string}
+        created_time: {type: string, nullable: true, description: 'As returned by Meta, not normalised.'}
+        leads_count: {type: integer, nullable: true}
+        attached_list_ids:
+          type: array
+          description: Lists on this page for the form (active or not).
+          items: {type: integer}
+        questions:
+          type: array
+          description: The form's questions, as Meta defines them. Use `key` as the form field name when mapping.
+          items:
+            type: object
+            required: [key, label, type]
+            properties:
+              key: {type: string}
+              label: {type: string}
+              type: {type: string}
+    Mapping:
+      type: object
+      description: Form field to destination field. A JSON object string is also accepted. An empty object clears the mapping (Jobber falls back to its default mapping).
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: array
+            items: {type: string}
+    ListSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        tags:
+          oneOf:
+            - type: string
+            - type: array
+              items: {type: string}
+        existed: {type: string, enum: ['', ignore, update]}
+        send_csv: {type: boolean}
+        lead_scoring: {type: boolean}
+        call_summary_to: {type: string}
+        call_summary_bcc: {type: string}
+        call_summary_email: {type: string}
+        sheet_id: {type: string, description: Required for Google Sheets.}
+    AttachListRequest:
+      type: object
+      required: [page_id, form_id, connection_id]
+      additionalProperties: false
+      properties:
+        page_id:
+          description: LeadSync page id or Facebook page id.
+          oneOf:
+            - type: integer
+            - type: string
+              pattern: '^[0-9]+$'
+        form_id:
+          description: A Meta lead form id, or `catch_all` (stored as '*').
+          oneOf:
+            - type: integer
+            - type: string
+        form_name:
+          type: string
+          description: Required unless form_id is catch_all.
+        connection_id:
+          type: integer
+          minimum: 1
+        mapping:
+          $ref: '#/components/schemas/Mapping'
+        settings:
+          $ref: '#/components/schemas/ListSettings'
+        override_limits:
+          type: boolean
+          default: false
+          description: Admin keys with write access only.
+    List:
+      type: object
+      required: [id, page_id, form_id, form_name, active]
+      properties:
+        id: {type: integer}
+        page_id: {type: integer}
+        form_id: {type: string, description: "'*' for the page catch-all."}
+        form_name: {type: string}
+        active: {type: boolean}
+        created: {type: boolean, description: Present on the attach response only.}
+    Destination:
+      type: object
+      required: [dls_id, connection_id, mapping_set]
+      properties:
+        dls_id: {type: integer}
+        connection_id: {type: integer}
+        mapping_set: {type: boolean}
+    OverriddenLimits:
+      type: array
+      description: Present only when `override_limits` was sent. The limit codes that failed and were skipped (possibly empty).
+      items:
+        type: string
+        enum: [account_inactive, source_limit, forms_limit, plan, limit]
+    AttachListResponse:
+      type: object
+      required: [list, destination, backfill]
+      properties:
+        list:
+          $ref: '#/components/schemas/List'
+        destination:
+          $ref: '#/components/schemas/Destination'
+        backfill:
+          type: object
+          nullable: true
+          description: Counts from the up-to-7-day form backfill to the new destination. Null for the catch-all, for an existing list, or if the backfill failed.
+          properties:
+            requeued: {type: integer}
+            injected: {type: integer}
+            errors: {type: integer}
+        mapping_applied:
+          type: boolean
+          description: Present (false) only when the list already existed and mapping or settings were sent.
+        hint:
+          type: string
+          description: Present only for an existing list, when mapping or settings were sent (accompanies mapping_applied) and/or the list is inactive.
+        overridden_limits:
+          $ref: '#/components/schemas/OverriddenLimits'
+    AutoresponderRefs:
+      type: array
+      items:
+        type: object
+        required: [id, name]
+        properties:
+          id: {type: integer}
+          name: {type: string}
+    CreateAutoresponderRequest:
+      type: object
+      required: [connection_id, name, subject, content]
+      additionalProperties: false
+      properties:
+        connection_id: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 80, pattern: '^[^\r\n]*$', description: Single line.}
+        subject: {type: string, minLength: 1, maxLength: 255, pattern: '^[^\r\n]*$', description: Single line (it becomes a mail header).}
+        content:
+          type: string
+          description: Plain text (blank-line paragraphs become <p>) or HTML per content_format. Tokens like #first_name pass through.
+        content_format: {type: string, enum: [text, html], default: text}
+        from_name: {type: string, maxLength: 80, nullable: true, pattern: '^[^\r\n]*$', description: Single line. Defaults to LeadSync.}
+        reply_email: {type: string, format: email, nullable: true, description: Defaults to the account email.}
+        acknowledge_shared_connection:
+          type: boolean
+          default: false
+          description: Proceed even though the connection already has autoresponders that would stack with this one.
+        override_limits:
+          type: boolean
+          default: false
+          description: Admin keys with write access only. Skips plan and quantity limits, never the shared-connection guard.
+    Lead:
+      type: object
+      required: [leadgen_id, source, form_name, page_name, received_at, legs, lead, archive]
+      properties:
+        leadgen_id: {type: string, nullable: true}
+        source: {type: string, description: 'meta, google, linkedin, tiktok, or the archive source.'}
+        form_name: {type: string, nullable: true}
+        page_name: {type: string, nullable: true}
+        received_at: {type: string, format: date-time, nullable: true}
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Leg'
+        lead:
+          type: object
+          nullable: true
+          description: Whitelisted contact fields from the first delivery that still holds them.
+          properties:
+            email: {type: string}
+            full_name: {type: string}
+            first_name: {type: string}
+            phone: {type: string}
+        archive:
+          type: object
+          nullable: true
+          properties:
+            delivered: {type: boolean}
+            lead_date_local:
+              type: string
+              nullable: true
+              description: The advertiser's local time (users.timezone), not UTC.
+            campaign_name: {type: string, nullable: true}
+            ad_name: {type: string, nullable: true}
+    Leg:
+      type: object
+      required: [leg_id, list_id, status, status_code, status_name, select_status, error, updated_at]
+      properties:
+        leg_id: {type: integer}
+        list_id: {type: integer}
+        status: {type: string, enum: [success, failed, pending, held]}
+        status_code: {type: integer}
+        status_name: {type: string}
+        select_status: {type: integer}
+        error: {type: string, nullable: true, description: 'Failed legs only, truncated to 500 characters.'}
+        updated_at: {type: string, format: date-time, nullable: true}
+    ResendResult:
+      type: object
+      required: [leadgen_id, parent_id, mode, requeued_leg_ids, skipped, other_account_legs, note]
+      properties:
+        leadgen_id: {type: string}
+        parent_id: {type: integer}
+        mode:
+          type: string
+          enum: [parent_only, legs_and_parent]
+        requeued_leg_ids:
+          type: array
+          items: {type: integer}
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [leg_id, reason]
+            properties:
+              leg_id: {type: integer}
+              reason: {type: string, enum: [success, not_failed, not_routed, other_list]}
+        other_account_legs:
+          type: integer
+          description: Other accounts' failed deliveries that the re-run also retries (admin keys only; account keys are refused instead).
+        note: {type: string}

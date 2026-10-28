@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "leadsync": {
+      "command": "npx",
+      "args": ["-y", "@leadsync/mcp@0.1"]
+    }
+  }
+}

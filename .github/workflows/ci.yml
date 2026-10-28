@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Server tests and build
+        working-directory: packages/mcp
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Installer tests
+        run: npm test
+      - name: Server package contents
+        working-directory: packages/mcp
+        run: npm pack --dry-run
+      - name: Installer package contents
+        run: npm pack --dry-run
+
+  installer-os:
+    # The installer promises macOS, Linux and Windows; it has no dependencies, so no npm ci.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installer tests
+        run: npm test

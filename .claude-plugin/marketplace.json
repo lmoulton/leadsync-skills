@@ -1,0 +1,19 @@
+{
+  "name": "leadsync-skills",
+  "owner": {
+    "name": "LeadSync",
+    "url": "https://leadsync.me"
+  },
+  "metadata": {
+    "description": "LeadSync MCP server and skills for Claude",
+    "version": "0.1.0",
+    "repository": "https://github.com/lmoulton/leadsync-skills"
+  },
+  "plugins": [
+    {
+      "name": "leadsync",
+      "description": "LeadSync MCP server plus skills for setup, connecting lead forms and troubleshooting lead delivery.",
+      "source": "./"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@leadsync/skills",
+  "version": "0.1.0",
+  "description": "Installs the LeadSync MCP server and skills into Claude Code, Cursor or Codex, and signs in to LeadSync with a device code.",
+  "license": "MIT",
+  "homepage": "https://leadsync.me/mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lmoulton/leadsync-skills"
+  },
+  "keywords": [
+    "mcp",
+    "leadsync",
+    "claude-code",
+    "cursor",
+    "codex",
+    "facebook-lead-ads",
+    "lead-delivery"
+  ],
+  "bin": {
+    "leadsync-skills": "installer/install.js"
+  },
+  "files": [
+    "installer/",
+    "!installer/**/*.test.js",
+    "skills/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test installer/lib/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
