@@ -31,7 +31,6 @@ jobs:
             const fs = require("fs")
             const read = (f) => JSON.parse(fs.readFileSync(f, "utf8"))
             const want = process.env.TAG.replace(/^v/, "")
-            const minor = want.split(".").slice(0, 2).join(".")
             const found = {
               "package.json": read("package.json").version,
               "packages/mcp/package.json": read("packages/mcp/package.json").version,
@@ -40,7 +39,8 @@ jobs:
             }
             const bad = Object.entries(found).filter(([, v]) => v !== want).map(([f, v]) => f + " is " + v)
             const spec = read(".mcp.json").mcpServers.leadsync.args.at(-1)
-            if (spec !== "@leadsync/mcp@" + minor) bad.push(".mcp.json runs " + spec)
+            // Anthropic's plugin directory blocks unpinned npx launchers, so the plugin pins the exact release.
+            if (spec !== "@leadsync/mcp@" + want) bad.push(".mcp.json runs " + spec)
             if (bad.length) {
               console.error("Release tag " + process.env.TAG + " does not match: " + bad.join("; "))
               process.exit(1)

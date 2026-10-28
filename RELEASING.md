@@ -33,7 +33,7 @@ After the first release from GitHub succeeds, lock token publishing off on both 
    npm version 0.1.1 --no-git-tag-version
    (cd packages/mcp && npm version 0.1.1 --no-git-tag-version)
    ```
-   Then set the same version by hand in `SERVER_VERSION` (`packages/mcp/src/server.ts`), `.claude-plugin/plugin.json` (`version`) and `.claude-plugin/marketplace.json` (`metadata.version`). `.mcp.json` runs `@leadsync/mcp@0.1`; change it only when the minor version changes (for 0.2.0 it becomes `@leadsync/mcp@0.2`).
+   Then set the same version by hand in `SERVER_VERSION` (`packages/mcp/src/server.ts`), `.claude-plugin/plugin.json` (`version`) and `.claude-plugin/marketplace.json` (`metadata.version`). Also set the exact version in `.mcp.json` (`@leadsync/mcp@0.1.1`): Anthropic's plugin directory blocks an npx launcher without an exact version, and the publish workflow checks it matches the tag.
 2. Run `npm test` at the root and `npm test && npm run build` in `packages/mcp`, commit (`Update: release 0.1.1`), and merge to `main`.
 3. Tag and release from `main`:
    ```bash

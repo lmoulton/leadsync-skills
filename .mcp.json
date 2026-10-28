@@ -2,7 +2,7 @@
   "mcpServers": {
     "leadsync": {
       "command": "npx",
-      "args": ["-y", "@leadsync/mcp@0.1"]
+      "args": ["-y", "@leadsync/mcp@0.1.0"]
     }
   }
 }

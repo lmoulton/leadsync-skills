@@ -28,7 +28,7 @@ The MCP server works on every plan, including the trial. Plan limits still apply
 
 **Installer.** `@leadsync/skills` has no dependencies. It registers `npx -y @leadsync/mcp@<version>` under the name `leadsync` through each host's own CLI (`claude mcp add`, `codex mcp add`) or a JSON merge into Cursor's `mcp.json` that keeps every other server and will not replace a different `leadsync` entry without `--force`. It copies the skills for Claude Code and Codex.
 
-**Packaging.** `@leadsync/mcp` (the server, from `packages/mcp`) and `@leadsync/skills` (the installer and `login`, from the repository root) are published to npm under the MIT licence, with provenance, from GitHub Actions. The Claude Code plugin's `.mcp.json` runs `npx -y @leadsync/mcp@0.1`, so a plugin installed from this repository needs no build.
+**Packaging.** `@leadsync/mcp` (the server, from `packages/mcp`) and `@leadsync/skills` (the installer and `login`, from the repository root) are published to npm under the MIT licence, with provenance, from GitHub Actions. The Claude Code plugin's `.mcp.json` runs `npx -y @leadsync/mcp@<exact version>` (pinned, as Anthropic's plugin directory requires), so a plugin installed from this repository needs no build.
 
 ## Not included yet
 
