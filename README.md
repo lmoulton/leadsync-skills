@@ -120,3 +120,5 @@ The installer (`installer/`, published as `@leadsync/skills`) has no dependencie
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+LeadSync is an independent product of Plankton Digital Pty Ltd and is not affiliated with, sponsored or endorsed by Meta. Facebook, Instagram and Meta are trademarks of Meta Platforms, Inc.
