@@ -11,7 +11,7 @@ Before you start: on npmjs.com, check that the organisation `leadsync` exists an
 1. In a terminal at the root of your leadsync-skills clone, on an up-to-date `main` (`git checkout main && git pull`), run `npm login` (browser sign-in as the npm user that owns the `leadsync` organisation).
 2. `cd packages/mcp && npm ci && npm run build && npm publish --access public` (enter the 2FA code when asked).
 3. `cd ../.. && npm publish --access public` (2FA again).
-4. On npmjs.com: open `@leadsync/mcp`, Settings, "Trusted Publisher", choose GitHub Actions, organisation or user `lmoulton`, repository `leadsync-skills`, workflow filename `publish.yml`, environment blank, and under allowed actions tick `npm publish`. Save. Repeat for `@leadsync/skills`. npm expires a trusted publisher that has not published within 2 days of being saved: if you will not cut the next release (below) within 2 days, skip this step now and do it on the day of that release.
+4. On npmjs.com: open `@leadsync/mcp`, Settings, "Trusted Publisher", choose GitHub Actions, organisation or user `lmoulton`, repository `leadsync-skills`, workflow filename `publish.yml`, environment blank, and leave **Allow npm publish** and **Allow npm dist-tag** unticked, so the workflow can only stage versions for you to approve. Save. Repeat for `@leadsync/skills`. npm expires a trusted publisher that has not published within 2 days of being saved: if you will not cut the next release (below) within 2 days, skip this step now and do it on the day of that release.
 5. Make the code public with a fresh history. Do not switch the existing private repository to public: its earlier commits are not for publication, and a visibility change cannot be taken back. From the root of your clone, on an up-to-date `main`:
    ```bash
    gh repo rename leadsync-skills-private -R lmoulton/leadsync-skills --yes
@@ -40,8 +40,9 @@ After the first release from GitHub succeeds, lock token publishing off on both 
    git tag v0.1.1 && git push origin v0.1.1
    gh release create v0.1.1 --title v0.1.1 --generate-notes
    ```
-   Publishing the release starts `publish.yml`. It refuses to publish if the tag does not match every version above, then tests, builds and publishes `@leadsync/mcp` first and `@leadsync/skills` second.
-4. Watch it with `gh run watch`, then check `npx -y @leadsync/skills@0.1.1 --help`.
+   Publishing the release starts `publish.yml`. It refuses to publish if the tag does not match every version above, then tests, builds and stages `@leadsync/mcp` first and `@leadsync/skills` second.
+4. Approve both staged versions with your 2FA code: on npmjs.com open each package and its **Staged** tab, or run `npm stage list @leadsync/mcp` and `npm stage approve <id>` (npm 11.21 or later). The trusted publishers allow staging only, so nothing reaches npm without this step.
+5. Watch it with `gh run watch`, then check `npx -y @leadsync/skills@0.1.1 --help` once both are approved.
 
 If the workflow fails after `@leadsync/mcp` was published, fix the cause and re-run it: each publish step skips a version that is already on npm.
 
