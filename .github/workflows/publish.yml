@@ -41,7 +41,7 @@ jobs:
             }
             const bad = Object.entries(found).filter(([, v]) => v !== want).map(([f, v]) => f + " is " + v)
             const spec = read(".mcp.json").mcpServers.leadsync.args.at(-1)
-            // Anthropic's plugin directory blocks unpinned npx launchers, so the plugin pins the exact release.
+            // The Anthropic plugin directory blocks unpinned npx launchers, so the plugin pins the exact release.
             if (spec !== "@leadsync/mcp@" + want) bad.push(".mcp.json runs " + spec)
             if (bad.length) {
               console.error("Release tag " + process.env.TAG + " does not match: " + bad.join("; "))
