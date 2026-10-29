@@ -107,6 +107,9 @@ function save(d, data, base, explicitBase) {
   return 0
 }
 
+/** Consecutive network failures tolerated while polling for approval before giving up. */
+const MAX_POLL_NETWORK_FAILURES = 3
+
 /**
  * Sign in with the LeadSync device flow (RFC 8628): get a code, show the link, poll until the browser approves,
  * then save the key to ~/.leadsync/.env. Never prints the key. Returns the exit code.
@@ -115,10 +118,20 @@ async function runLogin(argv, deps = {}) {
   const d = withDefaults(deps)
   let values
   try {
-    ;({ values } = util.parseArgs({ args: argv, options: { 'api-base': { type: 'string' } }, strict: true, allowPositionals: false }))
+    ;({ values } = util.parseArgs({
+      args: argv,
+      options: { 'api-base': { type: 'string' }, help: { type: 'boolean', short: 'h' } },
+      strict: true,
+      allowPositionals: false,
+    }))
   } catch (e) {
     d.log(e.message)
     return 1
+  }
+  if (values.help) {
+    d.log('Usage: npx @leadsync/skills login [--api-base <url>]')
+    d.log('Opens LeadSync in your browser to approve this computer, then saves an API key to ~/.leadsync/.env.')
+    return 0
   }
   const explicit = values['api-base']
   const base = resolveBase(explicit ?? d.apiBase ?? d.env.LEADSYNC_API_BASE ?? DEFAULT_BASE)
@@ -159,14 +172,18 @@ async function runLogin(argv, deps = {}) {
   d.log(`Waiting for approval (the link expires in ${Math.round(expiresIn / 60)} minutes).`)
 
   let elapsed = 0
+  let networkFailures = 0
   while (elapsed + interval <= expiresIn) {
     await d.sleep(interval * 1000)
     elapsed += interval
     const r = await post(d, `${base}/api/v1/device/token`, { device_code: code.device_code })
     if (r.network) {
+      // A dropped connection mid-wait shouldn't throw away an approval the user is about to give.
+      if (++networkFailures < MAX_POLL_NETWORK_FAILURES) continue
       d.log(unreachable)
       return 1
     }
+    networkFailures = 0
     if (r.ok) return save(d, r.data, base, explicit !== undefined)
     switch (r.data.code) {
       case 'authorization_pending':

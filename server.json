@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "me.leadsync/mcp",
+  "title": "LeadSync",
+  "description": "Manage Facebook and Instagram lead ad delivery: CRMs, alerts, autoresponders and test leads.",
+  "websiteUrl": "https://leadsync.me/mcp",
+  "repository": {
+    "url": "https://github.com/lmoulton/leadsync-skills",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@leadsync/mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "LEADSYNC_API_KEY",
+          "description": "LeadSync API key (Account, Settings, API keys). Optional if you ran npx @leadsync/skills login, which saves it to ~/.leadsync/.env.",
+          "isSecret": true,
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

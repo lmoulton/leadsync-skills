@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "LeadSync MCP server and skills for Claude",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "repository": "https://github.com/lmoulton/leadsync-skills"
   },
   "plugins": [

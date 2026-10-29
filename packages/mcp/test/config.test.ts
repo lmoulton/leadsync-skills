@@ -75,6 +75,14 @@ describe('loadConfig', () => {
     expect(loadConfig({ LEADSYNC_API_KEY: '  ' }, files({ [NEW_FILE]: 'LEADSYNC_API_KEY=file_key' })))
       .toEqual({ apiKey: 'file_key', apiBase: 'https://leadsync.me' })
   })
+  it('ignores an unexpanded ${...} placeholder in the env and reads the key file', () => {
+    expect(loadConfig({ LEADSYNC_API_KEY: '${user_config.api_key}' }, files({ [NEW_FILE]: 'LEADSYNC_API_KEY=file_key' })))
+      .toEqual({ apiKey: 'file_key', apiBase: 'https://leadsync.me' })
+  })
+  it('lets an expanded key from the plugin prompt win over the key file', () => {
+    expect(loadConfig({ LEADSYNC_API_KEY: 'ls_live_prompted' }, files({ [NEW_FILE]: 'LEADSYNC_API_KEY=file_key' })))
+      .toMatchObject({ apiKey: 'ls_live_prompted' })
+  })
   it('returns the bare key from a CRLF, quoted, padded file', () => {
     expect(loadConfig({}, files({ [NEW_FILE]: 'LEADSYNC_API_KEY="ls_live_abc" \r\n' }))).toMatchObject({ apiKey: 'ls_live_abc' })
   })

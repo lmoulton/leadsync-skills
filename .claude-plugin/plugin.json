@@ -1,7 +1,7 @@
 {
   "name": "leadsync",
   "displayName": "LeadSync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Set up and troubleshoot LeadSync lead delivery from Claude: an MCP server for the LeadSync API plus skills for setup, connecting lead forms and diagnosing missing leads.",
   "author": {
     "name": "LeadSync",
@@ -21,5 +21,15 @@
     "facebook-lead-ads",
     "meta-lead-ads",
     "mcp"
-  ]
+  ],
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "LeadSync API key (optional)",
+      "description": "Leave empty if you ran npx @leadsync/skills login, which saves the key on this computer. Otherwise paste a key from Account, Settings, API keys in LeadSync.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    }
+  }
 }

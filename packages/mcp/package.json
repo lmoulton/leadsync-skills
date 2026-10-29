@@ -1,6 +1,7 @@
 {
   "name": "@leadsync/mcp",
-  "version": "0.1.0",
+  "mcpName": "me.leadsync/mcp",
+  "version": "0.1.1",
   "description": "MCP server wrapping the LeadSync HTTP API v1",
   "license": "MIT",
   "homepage": "https://leadsync.me/mcp",

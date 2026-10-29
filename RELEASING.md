@@ -33,7 +33,7 @@ After the first release from GitHub succeeds, lock token publishing off on both 
    npm version 0.1.1 --no-git-tag-version
    (cd packages/mcp && npm version 0.1.1 --no-git-tag-version)
    ```
-   Then set the same version by hand in `SERVER_VERSION` (`packages/mcp/src/server.ts`), `.claude-plugin/plugin.json` (`version`) and `.claude-plugin/marketplace.json` (`metadata.version`). Also set the exact version in `.mcp.json` (`@leadsync/mcp@0.1.1`): Anthropic's plugin directory blocks an npx launcher without an exact version, and the publish workflow checks it matches the tag.
+   Then set the same version by hand in `SERVER_VERSION` (`packages/mcp/src/server.ts`), `.claude-plugin/plugin.json` (`version`) and `.claude-plugin/marketplace.json` (`metadata.version`). Also set the exact version in `.mcp.json` (`@leadsync/mcp@0.1.1`): Anthropic's plugin directory blocks an npx launcher without an exact version, and the publish workflow checks it matches the tag. And set `version` and `packages[0].version` in `server.json` (the official MCP Registry entry); the workflow checks those too.
 2. Run `npm test` at the root and `npm test && npm run build` in `packages/mcp`, commit (`Update: release 0.1.1`), and merge to `main`.
 3. Tag and release from `main`:
    ```bash
@@ -44,3 +44,27 @@ After the first release from GitHub succeeds, lock token publishing off on both 
 4. Watch it with `gh run watch`, then check `npx -y @leadsync/skills@0.1.1 --help`.
 
 If the workflow fails after `@leadsync/mcp` was published, fix the cause and re-run it: each publish step skips a version that is already on npm.
+
+## Official MCP Registry
+
+The registry entry is `server.json` at the repository root. Its `name`, `me.leadsync/mcp`, must match `mcpName` in `packages/mcp/package.json`, and the registry only lists a version that is already on npm with that `mcpName`. PulseMCP, GitHub's MCP registry and VS Code read from the registry, so one publish reaches all of them.
+
+The `me.leadsync` namespace is proven with a DNS record, signed by an Ed25519 key kept outside the repository at `~/.config/leadsync/mcp-registry-ed25519.pem` (mode 600) on the release machine.
+
+**Once:** add a TXT record on the apex of `leadsync.me` (DigitalOcean DNS) with the value printed by:
+
+```bash
+OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl   # macOS's LibreSSL has no Ed25519
+echo "v=MCPv1; k=ed25519; p=$($OPENSSL pkey -in ~/.config/leadsync/mcp-registry-ed25519.pem -pubout -outform DER | tail -c 32 | base64)"
+```
+
+**Each release, after npm has the new version:**
+
+```bash
+brew install mcp-publisher   # first time only
+PRIVATE_KEY="$(/opt/homebrew/opt/openssl@3/bin/openssl pkey -in ~/.config/leadsync/mcp-registry-ed25519.pem -noout -text | grep -A3 'priv:' | tail -n +2 | tr -d ' :\n')"
+mcp-publisher login dns --domain leadsync.me --private-key "$PRIVATE_KEY"
+mcp-publisher publish
+```
+
+Run `mcp-publisher publish` from the repository root so it reads `server.json`. Never paste the private key anywhere else.
