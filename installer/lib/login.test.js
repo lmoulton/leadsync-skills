@@ -118,10 +118,24 @@ test('startFailureIsOneLine', async () => {
   assert.deepEqual(garbled.lines, ['Could not start the login: the response from https://leadsync.me was not a device code.'])
 })
 
-test('pollNetworkFailureExits1', async () => {
-  const s = setup([json(START), new TypeError('fetch failed')])
+test('pollNetworkFailureExits1AfterThreeInARow', async () => {
+  const s = setup([json(START), new TypeError('fetch failed'), new TypeError('fetch failed'), new TypeError('fetch failed')])
   assert.equal(await runLogin([], s.deps), 1)
   assert.equal(s.lines.at(-1), 'Could not reach https://leadsync.me. Check your connection and try again.')
+  assert.equal(s.calls.length, 4)
+})
+
+test('aNetworkBlipWhilePollingIsRetried', async () => {
+  const s = setup([json(START), new TypeError('fetch failed'), problem('authorization_pending'), new TypeError('fetch failed'), new TypeError('fetch failed'), json(SUCCESS)])
+  assert.equal(await runLogin([], s.deps), 0)
+  assert.ok(keyFile(s.home).split('\n').includes(`LEADSYNC_API_KEY=${KEY}`))
+})
+
+test('loginHelpPrintsUsageAndExits0', async () => {
+  const s = setup([])
+  assert.equal(await runLogin(['--help'], s.deps), 0)
+  assert.equal(s.lines[0], 'Usage: npx @leadsync/skills login [--api-base <url>]')
+  assert.equal(s.calls.length, 0)
 })
 
 test('unexpectedPollProblemIsOneLine', async () => {

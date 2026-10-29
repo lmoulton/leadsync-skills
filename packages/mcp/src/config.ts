@@ -51,7 +51,9 @@ export function loadConfig(env: NodeJS.ProcessEnv, io: ConfigIo = defaultIo): Co
   const found: Partial<Record<(typeof VARS)[number], string>> = {}
   for (const v of VARS) {
     const val = env[v]?.trim()
-    if (val) found[v] = val
+    // A host that leaves the plugin's optional key prompt unexpanded ("${user_config.api_key}")
+    // must not hide the key file behind a value that can never authenticate.
+    if (val && !/^\$\{[^}]*\}$/.test(val)) found[v] = val
   }
   for (const file of keyFiles(io.home())) {
     if (VARS.every((v) => found[v])) break

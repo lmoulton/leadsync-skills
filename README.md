@@ -31,6 +31,8 @@ claude plugin install leadsync@leadsync-skills
 npx @leadsync/skills login
 ```
 
+The plugin also has an optional **LeadSync API key** setting (`/plugin configure leadsync@leadsync-skills`). Leave it empty if you ran `login`; if you paste a key there, Claude Code keeps it in your system keychain and it takes priority over `~/.leadsync/.env`.
+
 **Claude Desktop, Cursor or any MCP client:** add this to the client's MCP config:
 
 ```json

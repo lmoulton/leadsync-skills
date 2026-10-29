@@ -7,7 +7,7 @@ import { registerWriteTools } from './tools/write.js'
 import type { ApiLike } from './tools/shared.js'
 
 export const SERVER_NAME = 'leadsync'
-export const SERVER_VERSION = '0.1.0'
+export const SERVER_VERSION = '0.1.1'
 
 /** Stand-in client used when no key is set: every call resolves to a config error. */
 export function missingKeyClient(detail: string): ApiLike {
